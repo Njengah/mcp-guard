@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 from . import __version__
-from .core import add_policy, add_server, build_report, init, inspect_state, simulate
+from .core import (
+    add_policy,
+    add_server,
+    build_report,
+    export_policies,
+    import_policies,
+    init,
+    inspect_state,
+    simulate,
+)
 from .errors import MCPGuardError
 
 
@@ -37,6 +47,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     policy_add.set_defaults(func=cmd_policy_add)
 
+    policy_export = policy_subparsers.add_parser("export", help="Export tool policies as JSON.")
+    policy_export.add_argument("path", nargs="?", help="Optional output file path.")
+    policy_export.set_defaults(func=cmd_policy_export)
+
+    policy_import = policy_subparsers.add_parser("import", help="Import tool policies from JSON.")
+    policy_import.add_argument("path", help="Policy JSON file to import.")
+    policy_import.set_defaults(func=cmd_policy_import)
+
     inspect_parser = subparsers.add_parser("inspect", help="Print configured servers and policies.")
     inspect_parser.set_defaults(func=cmd_inspect)
 
@@ -66,6 +84,25 @@ def cmd_add_server(args: argparse.Namespace) -> int:
 def cmd_policy_add(args: argparse.Namespace) -> int:
     policy = add_policy(args.server, args.tool, args.mode)
     print(f"Policy saved: {policy['server']}.{policy['tool']} -> {policy['mode']}")
+    return 0
+
+
+def cmd_policy_export(args: argparse.Namespace) -> int:
+    policies = export_policies()
+    content = json.dumps(policies, indent=2, sort_keys=True) + "\n"
+    if args.path:
+        path = Path(args.path)
+        path.write_text(content, encoding="utf-8")
+        print(f"Policies exported: {path.resolve()}")
+    else:
+        print(content, end="")
+    return 0
+
+
+def cmd_policy_import(args: argparse.Namespace) -> int:
+    policies = import_policies(Path(args.path))
+    policy_count = sum(len(tools) for tools in policies.get("servers", {}).values())
+    print(f"Policies imported: {policy_count}")
     return 0
 
 
@@ -134,4 +171,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

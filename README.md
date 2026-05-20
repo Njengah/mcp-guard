@@ -47,6 +47,8 @@ mcpguard add-server github
 mcpguard policy add github read_file --mode allow
 mcpguard policy add github delete_repo --mode block
 mcpguard policy add github create_issue --mode approve
+mcpguard policy export policies.json
+mcpguard policy import policies.json
 mcpguard inspect
 mcpguard simulate github delete_repo
 mcpguard report
@@ -57,6 +59,8 @@ mcpguard report
 - `mcpguard init` creates local `.mcpguard/` state.
 - `mcpguard add-server <name>` registers an MCP server.
 - `mcpguard policy add <server> <tool> --mode allow|block|approve` adds or updates a tool policy.
+- `mcpguard policy export [path]` prints policies as JSON or writes them to `path`.
+- `mcpguard policy import <path>` validates and replaces local policies from a JSON file.
 - `mcpguard inspect` prints servers and policies grouped by server.
 - `mcpguard simulate <server> <tool>` evaluates a proposed MCP tool call and writes an audit log entry.
 - `mcpguard report` writes `.mcpguard/reports/report.md`.
