@@ -18,6 +18,27 @@ You can also run it without installing by setting `PYTHONPATH=src` and using:
 python -m mcpguard --help
 ```
 
+## Development
+
+From a fresh checkout, run the test suite without setting `PYTHONPATH`:
+
+```powershell
+python scripts/test.py
+```
+
+For an editable local install, use:
+
+```powershell
+python -m pip install -e .
+python -m unittest discover -s tests
+```
+
+After the editable install, the CLI is available as:
+
+```powershell
+mcpguard --help
+```
+
 ## Quick Start
 
 ```powershell
@@ -65,4 +86,3 @@ Generated `.mcpguard/` artifacts are ignored by Git by default.
 ## MVP Limitations
 
 This MVP simulates governance decisions and generates audit reports. It is not yet a live MCP proxy, does not intercept real tool calls, and does not implement human approval workflows or secret redaction.
-
