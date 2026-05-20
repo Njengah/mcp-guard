@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcpguard"
+version = "0.1.0"
+description = "Local-first governance, approvals, and audit trails for MCP tool calls."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "MCPGuard Contributors" }
+]
+keywords = ["mcp", "governance", "security", "audit", "cli"]
+dependencies = []
+
+[project.scripts]
+mcpguard = "mcpguard.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

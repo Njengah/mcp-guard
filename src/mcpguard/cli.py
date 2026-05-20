@@ -1,0 +1,137 @@
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+from . import __version__
+from .core import add_policy, add_server, build_report, init, inspect_state, simulate
+from .errors import MCPGuardError
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="mcpguard",
+        description="Local-first governance, approvals, and audit trails for MCP tool calls.",
+    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    init_parser = subparsers.add_parser("init", help="Initialize MCPGuard state in this project.")
+    init_parser.set_defaults(func=cmd_init)
+
+    add_server_parser = subparsers.add_parser("add-server", help="Register an MCP server.")
+    add_server_parser.add_argument("name", help="Server name to register.")
+    add_server_parser.set_defaults(func=cmd_add_server)
+
+    policy_parser = subparsers.add_parser("policy", help="Manage MCP tool policies.")
+    policy_subparsers = policy_parser.add_subparsers(dest="policy_command", required=True)
+    policy_add = policy_subparsers.add_parser("add", help="Add or update a tool policy.")
+    policy_add.add_argument("server", help="Configured MCP server name.")
+    policy_add.add_argument("tool", help="Tool name exposed by the server.")
+    policy_add.add_argument(
+        "--mode",
+        required=True,
+        choices=["allow", "block", "approve"],
+        help="Policy behavior for this tool.",
+    )
+    policy_add.set_defaults(func=cmd_policy_add)
+
+    inspect_parser = subparsers.add_parser("inspect", help="Print configured servers and policies.")
+    inspect_parser.set_defaults(func=cmd_inspect)
+
+    simulate_parser = subparsers.add_parser("simulate", help="Evaluate a proposed MCP tool call.")
+    simulate_parser.add_argument("server", help="Configured MCP server name.")
+    simulate_parser.add_argument("tool", help="Tool name to evaluate.")
+    simulate_parser.set_defaults(func=cmd_simulate)
+
+    report_parser = subparsers.add_parser("report", help="Generate a governance report.")
+    report_parser.set_defaults(func=cmd_report)
+
+    return parser
+
+
+def cmd_init(_args: argparse.Namespace) -> int:
+    init()
+    print("Initialized MCPGuard state in .mcpguard/")
+    return 0
+
+
+def cmd_add_server(args: argparse.Namespace) -> int:
+    server = add_server(args.name)
+    print(f"Added server: {server['name']}")
+    return 0
+
+
+def cmd_policy_add(args: argparse.Namespace) -> int:
+    policy = add_policy(args.server, args.tool, args.mode)
+    print(f"Policy saved: {policy['server']}.{policy['tool']} -> {policy['mode']}")
+    return 0
+
+
+def cmd_inspect(_args: argparse.Namespace) -> int:
+    state = inspect_state()
+    config = state["config"]
+    policies = state["policies"]
+    servers = config.get("servers", {})
+    policy_servers = policies.get("servers", {})
+
+    print(f"MCPGuard project: {config.get('project_name', 'unknown')}")
+    print(f"Schema version: {config.get('schema_version', 'unknown')}")
+    print("")
+    print("Servers:")
+    if not servers:
+        print("  (none configured)")
+    for name, server in sorted(servers.items()):
+        enabled = "enabled" if server.get("enabled", True) else "disabled"
+        print(f"  - {name} [{enabled}]")
+        tool_policies = policy_servers.get(name, {})
+        if not tool_policies:
+            print("    ! no policies configured; unknown tools require approval")
+            continue
+        for tool, policy in sorted(tool_policies.items()):
+            mode = policy.get("mode", "unknown")
+            marker = _mode_marker(mode)
+            print(f"    {marker} {tool}: {mode}")
+    return 0
+
+
+def cmd_simulate(args: argparse.Namespace) -> int:
+    result = simulate(args.server, args.tool)
+    print(f"Decision: {result['decision']}")
+    print(f"Reason: {result['reason']}")
+    print(f"Server: {result['server']}")
+    print(f"Tool: {result['tool']}")
+    print(f"Timestamp: {result['timestamp']}")
+    return 0
+
+
+def cmd_report(_args: argparse.Namespace) -> int:
+    report_path = build_report()
+    print(f"Report written: {Path(report_path).resolve()}")
+    return 0
+
+
+def _mode_marker(mode: str) -> str:
+    if mode == "block":
+        return "[BLOCK]"
+    if mode == "approve":
+        return "[APPROVE]"
+    if mode == "allow":
+        return "[ALLOW]"
+    return "[UNKNOWN]"
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        return args.func(args)
+    except MCPGuardError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
