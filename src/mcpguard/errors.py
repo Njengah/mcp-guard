@@ -18,6 +18,9 @@ class InvalidPolicyModeError(MCPGuardError):
     """Raised when a policy mode is not supported."""
 
 
+class InvalidPolicyFileError(MCPGuardError):
+    """Raised when an imported policy file does not match the expected shape."""
+
+
 class CorruptedStateError(MCPGuardError):
     """Raised when persisted JSON cannot be read as valid MCPGuard state."""
-

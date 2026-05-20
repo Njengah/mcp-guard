@@ -3,12 +3,19 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .errors import DuplicateServerError, UnknownServerError
+from .errors import (
+    DuplicateServerError,
+    InvalidPolicyFileError,
+    InvalidPolicyModeError,
+    UnknownServerError,
+)
 from .policy import evaluate_policy, validate_mode
 from .storage import (
+    SCHEMA_VERSION,
     append_jsonl,
     init_state,
     project_paths,
+    read_json,
     read_config,
     read_jsonl_dir,
     read_policies,
@@ -66,6 +73,65 @@ def add_policy(server: str, tool: str, mode: str, root: Path | None = None) -> d
     }
     write_json(paths.policies_file, policies)
     return server_policies[tool]
+
+
+def export_policies(root: Path | None = None) -> dict[str, Any]:
+    return read_policies(project_paths(root))
+
+
+def import_policies(source: Path, root: Path | None = None) -> dict[str, Any]:
+    imported = read_json(source)
+    validate_policy_file(imported)
+    paths = project_paths(root)
+    read_config(paths)
+    write_json(paths.policies_file, imported)
+    return imported
+
+
+def validate_policy_file(policies: dict[str, Any]) -> None:
+    schema_version = policies.get("schema_version")
+    if schema_version != SCHEMA_VERSION:
+        raise InvalidPolicyFileError(
+            f"Unsupported policy schema version '{schema_version}'. Expected '{SCHEMA_VERSION}'."
+        )
+
+    servers = policies.get("servers")
+    if not isinstance(servers, dict):
+        raise InvalidPolicyFileError("Policy file must contain a 'servers' object.")
+
+    for server_name, tool_policies in servers.items():
+        if not isinstance(server_name, str) or not server_name:
+            raise InvalidPolicyFileError("Policy server names must be non-empty strings.")
+        if not isinstance(tool_policies, dict):
+            raise InvalidPolicyFileError(f"Policies for server '{server_name}' must be an object.")
+        for tool_name, policy in tool_policies.items():
+            if not isinstance(tool_name, str) or not tool_name:
+                raise InvalidPolicyFileError(
+                    f"Policy tool names for server '{server_name}' must be non-empty strings."
+                )
+            if not isinstance(policy, dict):
+                raise InvalidPolicyFileError(
+                    f"Policy '{server_name}.{tool_name}' must be an object."
+                )
+            mode = policy.get("mode")
+            if not isinstance(mode, str):
+                raise InvalidPolicyFileError(
+                    f"Policy '{server_name}.{tool_name}' must include a string mode."
+                )
+            try:
+                policy["mode"] = validate_mode(mode)
+            except InvalidPolicyModeError as exc:
+                raise InvalidPolicyFileError(
+                    f"Policy '{server_name}.{tool_name}' has invalid mode '{mode}'."
+                ) from exc
+            if policy.get("server", server_name) != server_name:
+                raise InvalidPolicyFileError(
+                    f"Policy '{server_name}.{tool_name}' has a mismatched server field."
+                )
+            if policy.get("tool", tool_name) != tool_name:
+                raise InvalidPolicyFileError(
+                    f"Policy '{server_name}.{tool_name}' has a mismatched tool field."
+                )
 
 
 def inspect_state(root: Path | None = None) -> dict[str, Any]:
@@ -237,4 +303,3 @@ def render_report(
 
     lines.append("")
     return "\n".join(lines)
-
