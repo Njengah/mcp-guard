@@ -257,16 +257,120 @@ def _optional_text(value: str | None) -> str | None:
     return stripped or None
 
 
+def request_approval(
+    server: str,
+    tool: str,
+    *,
+    request_id: str,
+    requester: str | None = None,
+    reason: str | None = None,
+    expires_at: str | None = None,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    paths = project_paths(root)
+    config = read_config(paths)
+    if server not in config.get("servers", {}):
+        raise UnknownServerError(f"Unknown server '{server}'. Add it with 'mcpguard add-server {server}'.")
+
+    record = {
+        "timestamp": utc_now(),
+        "type": "request",
+        "request_id": request_id,
+        "server": server,
+        "tool": tool,
+        "requester": _optional_text(requester),
+        "reason": _optional_text(reason),
+        "expires_at": _optional_text(expires_at),
+        "decision": "pending",
+        "approver": None,
+        "decision_reason": None,
+    }
+    return _append_approval_record(paths, config, record)
+
+
+def approve_request(
+    request_id: str,
+    *,
+    approver: str,
+    reason: str | None = None,
+    expires_at: str | None = None,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    return _record_approval_decision(
+        request_id,
+        decision="approved",
+        approver=approver,
+        reason=reason,
+        expires_at=expires_at,
+        root=root,
+    )
+
+
+def reject_request(
+    request_id: str,
+    *,
+    approver: str,
+    reason: str | None = None,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    return _record_approval_decision(
+        request_id,
+        decision="rejected",
+        approver=approver,
+        reason=reason,
+        expires_at=None,
+        root=root,
+    )
+
+
+def _record_approval_decision(
+    request_id: str,
+    *,
+    decision: str,
+    approver: str,
+    reason: str | None,
+    expires_at: str | None,
+    root: Path | None,
+) -> dict[str, Any]:
+    paths = project_paths(root)
+    config = read_config(paths)
+    record = {
+        "timestamp": utc_now(),
+        "type": "decision",
+        "request_id": request_id,
+        "server": None,
+        "tool": None,
+        "requester": None,
+        "reason": None,
+        "expires_at": _optional_text(expires_at),
+        "decision": decision,
+        "approver": _optional_text(approver),
+        "decision_reason": _optional_text(reason),
+    }
+    return _append_approval_record(paths, config, record)
+
+
+def _append_approval_record(paths: Any, config: dict[str, Any], record: dict[str, Any]) -> dict[str, Any]:
+    redacted_record = redact_value(record, configured_redaction_patterns(config))
+    append_jsonl(paths.logs_dir / "approvals.jsonl", redacted_record)
+    return redacted_record
+
+
 def build_report(root: Path | None = None) -> Path:
     paths = project_paths(root)
     config = read_config(paths)
     policies = read_policies(paths)
-    simulations = read_jsonl_dir(paths.logs_dir)
+    simulations = read_jsonl_dir(paths.logs_dir, "simulations*.jsonl")
+    approvals = read_jsonl_dir(paths.logs_dir, "approvals*.jsonl")
     timestamp = utc_now()
 
     patterns = configured_redaction_patterns(config)
     redacted_simulations = redact_value(simulations, patterns)
-    content = redact_text(render_report(config, policies, redacted_simulations, timestamp), patterns)
+    redacted_approvals = redact_value(approvals, patterns)
+    content = redact_text(
+        render_report(config, policies, redacted_simulations, redacted_approvals, timestamp),
+        patterns,
+    )
     paths.reports_dir.mkdir(parents=True, exist_ok=True)
     paths.report_file.write_text(content, encoding="utf-8")
     return paths.report_file
@@ -289,6 +393,7 @@ def render_report(
     config: dict[str, Any],
     policies: dict[str, Any],
     simulations: list[dict[str, Any]],
+    approvals: list[dict[str, Any]],
     timestamp: str,
 ) -> str:
     servers = config.get("servers", {})
@@ -314,7 +419,7 @@ def render_report(
     lines.extend(["", "## Policy Summary", ""])
     total_policies = 0
     blocked: list[str] = []
-    approvals: list[str] = []
+    approval_policies: list[str] = []
     high_risk: list[str] = []
 
     for server_name in sorted(servers):
@@ -331,7 +436,7 @@ def render_report(
             if mode == "block":
                 blocked.append(item)
             if mode == "approve":
-                approvals.append(item)
+                approval_policies.append(item)
             if risk >= 70:
                 high_risk.append(item)
 
@@ -339,7 +444,7 @@ def render_report(
     lines.extend([f"- {item}" for item in high_risk] or ["- No high-risk tools identified."])
 
     lines.extend(["", "## Tools Requiring Approval", ""])
-    lines.extend([f"- {item}" for item in approvals] or ["- No explicit approval policies configured."])
+    lines.extend([f"- {item}" for item in approval_policies] or ["- No explicit approval policies configured."])
 
     lines.extend(["", "## Blocked Tools", ""])
     lines.extend([f"- {item}" for item in blocked] or ["- No blocked tools configured."])
@@ -363,6 +468,14 @@ def render_report(
     else:
         lines.append("- No simulations recorded.")
 
+    lines.extend(["", "## Approval Activity", ""])
+    recent_approvals = sorted(approvals, key=lambda entry: entry.get("timestamp", ""))[-10:]
+    if recent_approvals:
+        for entry in recent_approvals:
+            lines.append(f"- {_format_approval_record(entry)}")
+    else:
+        lines.append("- No approval activity recorded.")
+
     lines.extend(
         [
             "",
@@ -371,6 +484,7 @@ def render_report(
             f"- Configured servers: {len(servers)}",
             f"- Configured tool policies: {total_policies}",
             f"- Simulated decisions: {len(simulations)}",
+            f"- Approval records: {len(approvals)}",
             f"- Report timestamp: {timestamp}",
             "",
             "## Recommendations",
@@ -381,12 +495,14 @@ def render_report(
         lines.append("- Add MCP servers before relying on governance reports.")
     if any(not policy_servers.get(server_name) for server_name in servers):
         lines.append("- Add explicit policies for servers with no policy coverage.")
-    if approvals:
+    if approval_policies:
         lines.append("- Define approval actors and response procedures for approval-required tools.")
     if blocked:
         lines.append("- Review blocked tools periodically to keep security controls intentional.")
     if not simulations:
         lines.append("- Run simulations for expected MCP tool calls to create audit evidence.")
+    if approvals:
+        lines.append("- Review approval activity for stale pending requests and expired approvals.")
     if servers and total_policies and simulations:
         lines.append("- Export this report into security reviews after each material policy change.")
 
@@ -407,4 +523,29 @@ def _format_simulation_metadata(entry: dict[str, Any]) -> str:
         value = entry.get(key)
         if value:
             parts.append(f"{label}: {value}")
+    return "; ".join(parts)
+
+
+def _format_approval_record(entry: dict[str, Any]) -> str:
+    timestamp = entry.get("timestamp", "unknown")
+    request_id = entry.get("request_id", "unknown")
+    decision = entry.get("decision", "unknown")
+    if entry.get("type") == "request":
+        target = f"{entry.get('server', 'unknown')}.{entry.get('tool', 'unknown')}"
+        parts = [f"{timestamp} request {request_id}: {target} ({decision})"]
+        if entry.get("requester"):
+            parts.append(f"requester: {entry['requester']}")
+        if entry.get("reason"):
+            parts.append(f"reason: {entry['reason']}")
+        if entry.get("expires_at"):
+            parts.append(f"expires: {entry['expires_at']}")
+        return "; ".join(parts)
+
+    parts = [f"{timestamp} decision {request_id}: {decision}"]
+    if entry.get("approver"):
+        parts.append(f"approver: {entry['approver']}")
+    if entry.get("decision_reason"):
+        parts.append(f"reason: {entry['decision_reason']}")
+    if entry.get("expires_at"):
+        parts.append(f"expires: {entry['expires_at']}")
     return "; ".join(parts)

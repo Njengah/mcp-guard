@@ -52,6 +52,8 @@ mcpguard policy export policies.json
 mcpguard policy import policies.json
 mcpguard inspect
 mcpguard simulate github delete_repo --actor alex@example.com --reason "review destructive access" --request-id CHG-123
+mcpguard approval request github delete_repo --request-id CHG-123 --requester alex@example.com --reason "maintenance window"
+mcpguard approval approve CHG-123 --approver security@example.com --reason "approved for maintenance window"
 mcpguard report
 ```
 
@@ -65,6 +67,9 @@ mcpguard report
 - `mcpguard policy import <path>` validates and replaces local policies from a JSON file.
 - `mcpguard inspect` prints servers and policies grouped by server.
 - `mcpguard simulate <server> <tool>` evaluates a proposed MCP tool call and writes an audit log entry.
+- `mcpguard approval request <server> <tool> --request-id <id>` records a local approval request.
+- `mcpguard approval approve <request-id> --approver <name>` records an approval decision.
+- `mcpguard approval reject <request-id> --approver <name>` records a rejection decision.
 - `mcpguard report` writes `.mcpguard/reports/report.md`.
 
 Simulation metadata is optional and can be supplied when a simulated decision needs stronger audit context:
@@ -74,6 +79,18 @@ mcpguard simulate github delete_repo --actor alex@example.com --reason "review d
 ```
 
 Supported metadata fields are `--actor`, `--reason`, `--request-id`, `--source-repo`, and `--run-id`. Supplied values are stored in `.mcpguard/logs/simulations.jsonl` and shown in reports.
+
+## Approval Records
+
+Approval records provide a local workflow for documenting human decisions without a hosted service. Requests and decisions are appended to `.mcpguard/logs/approvals.jsonl` and included in governance reports.
+
+```powershell
+mcpguard approval request github delete_repo --request-id CHG-123 --requester alex@example.com --reason "maintenance window" --expires-at 2026-06-01T00:00:00Z
+mcpguard approval approve CHG-123 --approver security@example.com --reason "approved for maintenance window" --expires-at 2026-06-02T00:00:00Z
+mcpguard approval reject CHG-124 --approver security@example.com --reason "missing rollback plan"
+```
+
+Approval requests capture the server, tool, requester, reason, expiration, and timestamp. Decisions capture the approver, decision reason, expiration for approvals, and timestamp.
 
 ## Redaction
 
@@ -127,6 +144,8 @@ MCPGuard stores local state in:
   config.json
   policies.json
   logs/
+    approvals.jsonl
+    simulations.jsonl
   reports/
     report.md
 ```
@@ -135,4 +154,4 @@ Generated `.mcpguard/` artifacts are ignored by Git by default.
 
 ## MVP Limitations
 
-This MVP simulates governance decisions and generates audit reports. It is not yet a live MCP proxy, does not intercept real tool calls, and does not implement human approval workflows or secret redaction.
+This MVP simulates governance decisions, stores local approval records, and generates audit reports. It is not yet a live MCP proxy and does not intercept real tool calls.

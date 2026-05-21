@@ -214,6 +214,120 @@ class CliTests(unittest.TestCase):
             self.assertIn("[REDACTED]", log_content)
             self.assertIn("[REDACTED]", report)
 
+    def test_approval_workflow_writes_records(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cwd = Path(temp_dir)
+
+            self.assertEqual(self.run_cli(cwd, "init").returncode, 0)
+            self.assertEqual(self.run_cli(cwd, "add-server", "github").returncode, 0)
+            result = self.run_cli(
+                cwd,
+                "approval",
+                "request",
+                "github",
+                "delete_repo",
+                "--request-id",
+                "CHG-123",
+                "--requester",
+                "alex@example.com",
+                "--reason",
+                "cleanup archived repo",
+                "--expires-at",
+                "2026-06-01T00:00:00Z",
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Approval requested: CHG-123", result.stdout)
+
+            result = self.run_cli(
+                cwd,
+                "approval",
+                "approve",
+                "CHG-123",
+                "--approver",
+                "security@example.com",
+                "--reason",
+                "approved during change review",
+                "--expires-at",
+                "2026-06-02T00:00:00Z",
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Approval recorded: CHG-123 -> approved", result.stdout)
+
+            records = [
+                json.loads(line)
+                for line in (cwd / ".mcpguard" / "logs" / "approvals.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            self.assertEqual(len(records), 2)
+            self.assertEqual(records[0]["type"], "request")
+            self.assertEqual(records[0]["request_id"], "CHG-123")
+            self.assertEqual(records[0]["server"], "github")
+            self.assertEqual(records[0]["tool"], "delete_repo")
+            self.assertEqual(records[0]["requester"], "alex@example.com")
+            self.assertEqual(records[1]["type"], "decision")
+            self.assertEqual(records[1]["decision"], "approved")
+            self.assertEqual(records[1]["approver"], "security@example.com")
+
+    def test_approval_reject_and_report_activity(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cwd = Path(temp_dir)
+
+            self.assertEqual(self.run_cli(cwd, "init").returncode, 0)
+            self.assertEqual(self.run_cli(cwd, "add-server", "github").returncode, 0)
+            self.assertEqual(
+                self.run_cli(
+                    cwd,
+                    "approval",
+                    "request",
+                    "github",
+                    "delete_repo",
+                    "--request-id",
+                    "CHG-456",
+                    "--requester",
+                    "ops@example.com",
+                ).returncode,
+                0,
+            )
+            result = self.run_cli(
+                cwd,
+                "approval",
+                "reject",
+                "CHG-456",
+                "--approver",
+                "security@example.com",
+                "--reason",
+                "missing rollback plan",
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Approval recorded: CHG-456 -> rejected", result.stdout)
+
+            result = self.run_cli(cwd, "report")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = (cwd / ".mcpguard" / "reports" / "report.md").read_text(encoding="utf-8")
+            self.assertIn("## Approval Activity", report)
+            self.assertIn("request CHG-456: github.delete_repo", report)
+            self.assertIn("decision CHG-456: rejected", report)
+            self.assertIn("approver: security@example.com", report)
+            self.assertIn("Approval records: 2", report)
+
+    def test_approval_request_unknown_server_errors(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cwd = Path(temp_dir)
+
+            self.assertEqual(self.run_cli(cwd, "init").returncode, 0)
+            result = self.run_cli(
+                cwd,
+                "approval",
+                "request",
+                "missing",
+                "delete_repo",
+                "--request-id",
+                "CHG-789",
+            )
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("Unknown server", result.stderr)
+
     def test_invalid_policy_mode_errors(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             cwd = Path(temp_dir)

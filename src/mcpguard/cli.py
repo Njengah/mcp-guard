@@ -9,6 +9,7 @@ from . import __version__
 from .core import (
     add_policy,
     add_server,
+    approve_request,
     apply_policy_pack,
     available_policy_packs,
     build_report,
@@ -16,6 +17,8 @@ from .core import (
     import_policies,
     init,
     inspect_state,
+    reject_request,
+    request_approval,
     simulate,
 )
 from .errors import MCPGuardError
@@ -80,6 +83,30 @@ def build_parser() -> argparse.ArgumentParser:
     simulate_parser.add_argument("--source-repo", help="Repository associated with the simulated request.")
     simulate_parser.add_argument("--run-id", help="Automation, CI, or agent run identifier.")
     simulate_parser.set_defaults(func=cmd_simulate)
+
+    approval_parser = subparsers.add_parser("approval", help="Manage local approval records.")
+    approval_subparsers = approval_parser.add_subparsers(dest="approval_command", required=True)
+    approval_request = approval_subparsers.add_parser("request", help="Create an approval request.")
+    approval_request.add_argument("server", help="Configured MCP server name.")
+    approval_request.add_argument("tool", help="Tool name requiring approval.")
+    approval_request.add_argument("--request-id", required=True, help="Request, ticket, or change ID.")
+    approval_request.add_argument("--requester", help="Person, service, or agent requesting approval.")
+    approval_request.add_argument("--reason", help="Reason the approval is needed.")
+    approval_request.add_argument("--expires-at", help="Optional approval request expiration timestamp.")
+    approval_request.set_defaults(func=cmd_approval_request)
+
+    approval_approve = approval_subparsers.add_parser("approve", help="Record an approval decision.")
+    approval_approve.add_argument("request_id", help="Request ID to approve.")
+    approval_approve.add_argument("--approver", required=True, help="Person or service approving the request.")
+    approval_approve.add_argument("--reason", help="Decision reason.")
+    approval_approve.add_argument("--expires-at", help="Optional approval expiration timestamp.")
+    approval_approve.set_defaults(func=cmd_approval_approve)
+
+    approval_reject = approval_subparsers.add_parser("reject", help="Record a rejection decision.")
+    approval_reject.add_argument("request_id", help="Request ID to reject.")
+    approval_reject.add_argument("--approver", required=True, help="Person or service rejecting the request.")
+    approval_reject.add_argument("--reason", help="Decision reason.")
+    approval_reject.set_defaults(func=cmd_approval_reject)
 
     report_parser = subparsers.add_parser("report", help="Generate a governance report.")
     report_parser.set_defaults(func=cmd_report)
@@ -183,6 +210,40 @@ def cmd_simulate(args: argparse.Namespace) -> int:
         print(f"Source repo: {result['source_repo']}")
     if result.get("run_id"):
         print(f"Run ID: {result['run_id']}")
+    return 0
+
+
+def cmd_approval_request(args: argparse.Namespace) -> int:
+    record = request_approval(
+        args.server,
+        args.tool,
+        request_id=args.request_id,
+        requester=args.requester,
+        reason=args.reason,
+        expires_at=args.expires_at,
+    )
+    print(f"Approval requested: {record['request_id']} for {record['server']}.{record['tool']}")
+    return 0
+
+
+def cmd_approval_approve(args: argparse.Namespace) -> int:
+    record = approve_request(
+        args.request_id,
+        approver=args.approver,
+        reason=args.reason,
+        expires_at=args.expires_at,
+    )
+    print(f"Approval recorded: {record['request_id']} -> approved")
+    return 0
+
+
+def cmd_approval_reject(args: argparse.Namespace) -> int:
+    record = reject_request(
+        args.request_id,
+        approver=args.approver,
+        reason=args.reason,
+    )
+    print(f"Approval recorded: {record['request_id']} -> rejected")
     return 0
 
 
