@@ -47,6 +47,7 @@ mcpguard add-server github
 mcpguard policy add github read_file --mode allow
 mcpguard policy add github delete_repo --mode block
 mcpguard policy add github create_issue --mode approve
+mcpguard policy apply-pack github
 mcpguard policy export policies.json
 mcpguard policy import policies.json
 mcpguard inspect
@@ -59,11 +60,31 @@ mcpguard report
 - `mcpguard init` creates local `.mcpguard/` state.
 - `mcpguard add-server <name>` registers an MCP server.
 - `mcpguard policy add <server> <tool> --mode allow|block|approve` adds or updates a tool policy.
+- `mcpguard policy apply-pack <name>` applies a starter policy pack and creates the matching server if needed.
 - `mcpguard policy export [path]` prints policies as JSON or writes them to `path`.
 - `mcpguard policy import <path>` validates and replaces local policies from a JSON file.
 - `mcpguard inspect` prints servers and policies grouped by server.
 - `mcpguard simulate <server> <tool>` evaluates a proposed MCP tool call and writes an audit log entry.
 - `mcpguard report` writes `.mcpguard/reports/report.md`.
+
+## Policy Packs
+
+Policy packs provide starter policies for common MCP server categories. They are intentionally conservative: read-only discovery tools are usually allowed, mutating tools require approval, and destructive or arbitrary execution tools are blocked.
+
+Built-in packs:
+
+- `github`: repository, issue, and pull request operations.
+- `filesystem`: local file and directory operations.
+- `browser`: browser navigation, interaction, capture, downloads, and script execution.
+- `database`: schema inspection and database query operations.
+
+Apply a pack with:
+
+```powershell
+mcpguard policy apply-pack github
+```
+
+Applying a pack creates the matching server when it does not already exist. Reapplying a pack refreshes that pack's starter policies.
 
 ## Decision Rules
 
