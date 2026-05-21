@@ -72,6 +72,8 @@ mcpguard report
 - `mcpguard approval reject <request-id> --approver <name>` records a rejection decision.
 - `mcpguard report` writes `.mcpguard/reports/report.md`.
 
+Reports include policy coverage, servers without explicit policies, high-risk unknown simulated tools, recent simulations, approval activity, evidence counts, and recommendations.
+
 Simulation metadata is optional and can be supplied when a simulated decision needs stronger audit context:
 
 ```powershell

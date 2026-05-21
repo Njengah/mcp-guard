@@ -416,6 +416,31 @@ def render_report(
             enabled = "enabled" if server.get("enabled", True) else "disabled"
             lines.append(f"- {name}: {enabled}, created {server.get('created_at', 'unknown')}")
 
+    coverage = _policy_coverage(servers, policy_servers)
+    lines.extend(
+        [
+            "",
+            "## Policy Coverage Summary",
+            "",
+            f"- Servers configured: {coverage['server_count']}",
+            f"- Servers with explicit policies: {coverage['covered_server_count']}",
+            f"- Servers without explicit policies: {coverage['uncovered_server_count']}",
+            f"- Policy coverage: {coverage['coverage_percent']}%",
+            f"- Allow policies: {coverage['allow_count']}",
+            f"- Approval policies: {coverage['approve_count']}",
+            f"- Block policies: {coverage['block_count']}",
+            f"- Unknown-mode policies: {coverage['unknown_count']}",
+            "",
+            "## Servers Without Explicit Policies",
+            "",
+        ]
+    )
+    if coverage["uncovered_servers"]:
+        for server_name in coverage["uncovered_servers"]:
+            lines.append(f"- {server_name}: unknown tools default to approval until policies are added.")
+    else:
+        lines.append("- All configured servers have at least one explicit policy.")
+
     lines.extend(["", "## Policy Summary", ""])
     total_policies = 0
     blocked: list[str] = []
@@ -448,6 +473,22 @@ def render_report(
 
     lines.extend(["", "## Blocked Tools", ""])
     lines.extend([f"- {item}" for item in blocked] or ["- No blocked tools configured."])
+
+    high_risk_unknown = _high_risk_unknown_simulations(simulations)
+    lines.extend(["", "## High-Risk Unknown Simulations", ""])
+    if high_risk_unknown:
+        for entry in high_risk_unknown:
+            lines.append(
+                "- {server}.{tool} risk {risk}: {decision} at {timestamp}".format(
+                    server=entry.get("server", "unknown"),
+                    tool=entry.get("tool", "unknown"),
+                    risk=entry.get("risk_score", default_risk_score(entry.get("tool", ""), None)),
+                    decision=entry.get("decision", "UNKNOWN"),
+                    timestamp=entry.get("timestamp", "unknown"),
+                )
+            )
+    else:
+        lines.append("- No high-risk unknown simulated tools identified.")
 
     lines.extend(["", "## Recent Simulations", ""])
     recent = sorted(simulations, key=lambda entry: entry.get("timestamp", ""))[-10:]
@@ -482,8 +523,14 @@ def render_report(
             "## Governance Evidence",
             "",
             f"- Configured servers: {len(servers)}",
+            f"- Servers with policy coverage: {coverage['covered_server_count']}",
+            f"- Servers without policy coverage: {coverage['uncovered_server_count']}",
             f"- Configured tool policies: {total_policies}",
+            f"- Allow policies: {coverage['allow_count']}",
+            f"- Approval policies: {coverage['approve_count']}",
+            f"- Block policies: {coverage['block_count']}",
             f"- Simulated decisions: {len(simulations)}",
+            f"- High-risk unknown simulations: {len(high_risk_unknown)}",
             f"- Approval records: {len(approvals)}",
             f"- Report timestamp: {timestamp}",
             "",
@@ -494,7 +541,12 @@ def render_report(
     if not servers:
         lines.append("- Add MCP servers before relying on governance reports.")
     if any(not policy_servers.get(server_name) for server_name in servers):
-        lines.append("- Add explicit policies for servers with no policy coverage.")
+        uncovered = ", ".join(coverage["uncovered_servers"])
+        lines.append(f"- Add explicit policies for servers with no policy coverage: {uncovered}.")
+    if high_risk_unknown:
+        lines.append("- Convert high-risk unknown simulated tools into explicit allow, approve, or block policies.")
+    if coverage["unknown_count"]:
+        lines.append("- Review policies with unknown modes before sharing this report.")
     if approval_policies:
         lines.append("- Define approval actors and response procedures for approval-required tools.")
     if blocked:
@@ -524,6 +576,57 @@ def _format_simulation_metadata(entry: dict[str, Any]) -> str:
         if value:
             parts.append(f"{label}: {value}")
     return "; ".join(parts)
+
+
+def _policy_coverage(
+    servers: dict[str, Any],
+    policy_servers: dict[str, Any],
+) -> dict[str, Any]:
+    uncovered_servers = [
+        server_name
+        for server_name in sorted(servers)
+        if not policy_servers.get(server_name)
+    ]
+    mode_counts = {
+        "allow_count": 0,
+        "approve_count": 0,
+        "block_count": 0,
+        "unknown_count": 0,
+    }
+    for tool_policies in policy_servers.values():
+        if not isinstance(tool_policies, dict):
+            continue
+        for policy in tool_policies.values():
+            mode = policy.get("mode") if isinstance(policy, dict) else None
+            key = f"{mode}_count"
+            if key in mode_counts:
+                mode_counts[key] += 1
+            else:
+                mode_counts["unknown_count"] += 1
+
+    server_count = len(servers)
+    covered_server_count = server_count - len(uncovered_servers)
+    coverage_percent = round((covered_server_count / server_count) * 100) if server_count else 0
+    return {
+        "server_count": server_count,
+        "covered_server_count": covered_server_count,
+        "uncovered_server_count": len(uncovered_servers),
+        "uncovered_servers": uncovered_servers,
+        "coverage_percent": coverage_percent,
+        **mode_counts,
+    }
+
+
+def _high_risk_unknown_simulations(simulations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    high_risk: list[dict[str, Any]] = []
+    for entry in simulations:
+        if entry.get("matched_policy") is not None:
+            continue
+        tool = entry.get("tool", "")
+        risk = entry.get("risk_score", default_risk_score(tool, None))
+        if risk >= 70:
+            high_risk.append(entry)
+    return sorted(high_risk, key=lambda entry: entry.get("timestamp", ""))[-10:]
 
 
 def _format_approval_record(entry: dict[str, Any]) -> str:
