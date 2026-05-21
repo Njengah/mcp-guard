@@ -12,6 +12,7 @@ from .errors import (
 )
 from .packs import POLICY_PACKS, PolicyPack, list_policy_packs
 from .policy import evaluate_policy, validate_mode
+from .redaction import configured_redaction_patterns, redact_text, redact_value
 from .storage import (
     SCHEMA_VERSION,
     append_jsonl,
@@ -244,8 +245,9 @@ def simulate(
         "run_id": _optional_text(run_id)
         or config.get("future_integrations", {}).get("agenttrace_run_id"),
     }
-    append_jsonl(paths.logs_dir / "simulations.jsonl", entry)
-    return entry
+    redacted_entry = redact_value(entry, configured_redaction_patterns(config))
+    append_jsonl(paths.logs_dir / "simulations.jsonl", redacted_entry)
+    return redacted_entry
 
 
 def _optional_text(value: str | None) -> str | None:
@@ -262,7 +264,9 @@ def build_report(root: Path | None = None) -> Path:
     simulations = read_jsonl_dir(paths.logs_dir)
     timestamp = utc_now()
 
-    content = render_report(config, policies, simulations, timestamp)
+    patterns = configured_redaction_patterns(config)
+    redacted_simulations = redact_value(simulations, patterns)
+    content = redact_text(render_report(config, policies, redacted_simulations, timestamp), patterns)
     paths.reports_dir.mkdir(parents=True, exist_ok=True)
     paths.report_file.write_text(content, encoding="utf-8")
     return paths.report_file

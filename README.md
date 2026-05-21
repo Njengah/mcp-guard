@@ -75,6 +75,23 @@ mcpguard simulate github delete_repo --actor alex@example.com --reason "review d
 
 Supported metadata fields are `--actor`, `--reason`, `--request-id`, `--source-repo`, and `--run-id`. Supplied values are stored in `.mcpguard/logs/simulations.jsonl` and shown in reports.
 
+## Redaction
+
+MCPGuard redacts common secret-like values before writing simulation logs and reports. Default patterns cover common API key, token, secret, password, GitHub token, OpenAI key, Slack token, and AWS access key shapes.
+
+Custom project patterns can be added in `.mcpguard/config.json`:
+
+```json
+{
+  "redaction": {
+    "default_patterns": true,
+    "patterns": ["internal-[0-9]+"]
+  }
+}
+```
+
+Set `default_patterns` to `false` only when a project intentionally wants to manage every redaction pattern itself.
+
 ## Policy Packs
 
 Policy packs provide starter policies for common MCP server categories. They are intentionally conservative: read-only discovery tools are usually allowed, mutating tools require approval, and destructive or arbitrary execution tools are blocked.
