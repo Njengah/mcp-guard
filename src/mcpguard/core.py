@@ -204,7 +204,17 @@ def inspect_state(root: Path | None = None) -> dict[str, Any]:
     }
 
 
-def simulate(server: str, tool: str, root: Path | None = None) -> dict[str, Any]:
+def simulate(
+    server: str,
+    tool: str,
+    root: Path | None = None,
+    *,
+    actor: str | None = None,
+    request_reason: str | None = None,
+    request_id: str | None = None,
+    source_repo: str | None = None,
+    run_id: str | None = None,
+) -> dict[str, Any]:
     paths = project_paths(root)
     config = read_config(paths)
     policies = read_policies(paths)
@@ -225,12 +235,24 @@ def simulate(server: str, tool: str, root: Path | None = None) -> dict[str, Any]
         "agent_tool": None,
         "mcp_transport": None,
         "risk_score": default_risk_score(tool, mode),
+        "actor": _optional_text(actor),
+        "request_reason": _optional_text(request_reason),
+        "request_id": _optional_text(request_id),
         "approval_actor": None,
-        "source_repo": config.get("future_integrations", {}).get("source_repo"),
-        "agenttrace_run_id": config.get("future_integrations", {}).get("agenttrace_run_id"),
+        "source_repo": _optional_text(source_repo)
+        or config.get("future_integrations", {}).get("source_repo"),
+        "run_id": _optional_text(run_id)
+        or config.get("future_integrations", {}).get("agenttrace_run_id"),
     }
     append_jsonl(paths.logs_dir / "simulations.jsonl", entry)
     return entry
+
+
+def _optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
 
 
 def build_report(root: Path | None = None) -> Path:
@@ -322,13 +344,16 @@ def render_report(
     recent = sorted(simulations, key=lambda entry: entry.get("timestamp", ""))[-10:]
     if recent:
         for entry in recent:
+            metadata = _format_simulation_metadata(entry)
+            suffix = f" ({metadata})" if metadata else ""
             lines.append(
-                "- {timestamp} {decision}: {server}.{tool} - {reason}".format(
+                "- {timestamp} {decision}: {server}.{tool} - {reason}{suffix}".format(
                     timestamp=entry.get("timestamp", "unknown"),
                     decision=entry.get("decision", "UNKNOWN"),
                     server=entry.get("server", "unknown"),
                     tool=entry.get("tool", "unknown"),
                     reason=entry.get("reason", "no reason recorded"),
+                    suffix=suffix,
                 )
             )
     else:
@@ -363,3 +388,19 @@ def render_report(
 
     lines.append("")
     return "\n".join(lines)
+
+
+def _format_simulation_metadata(entry: dict[str, Any]) -> str:
+    labels = (
+        ("actor", "actor"),
+        ("request_reason", "reason"),
+        ("request_id", "request"),
+        ("source_repo", "repo"),
+        ("run_id", "run"),
+    )
+    parts = []
+    for key, label in labels:
+        value = entry.get(key)
+        if value:
+            parts.append(f"{label}: {value}")
+    return "; ".join(parts)

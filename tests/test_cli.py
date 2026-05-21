@@ -65,6 +65,73 @@ class CliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             self.assertIn("Unknown server", result.stderr)
 
+    def test_simulate_records_optional_metadata(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cwd = Path(temp_dir)
+
+            self.assertEqual(self.run_cli(cwd, "init").returncode, 0)
+            self.assertEqual(self.run_cli(cwd, "add-server", "github").returncode, 0)
+            result = self.run_cli(
+                cwd,
+                "simulate",
+                "github",
+                "create_issue",
+                "--actor",
+                "alex@example.com",
+                "--reason",
+                "triage production incident",
+                "--request-id",
+                "INC-123",
+                "--source-repo",
+                "github.com/acme/service",
+                "--run-id",
+                "run-456",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Actor: alex@example.com", result.stdout)
+            self.assertIn("Request reason: triage production incident", result.stdout)
+            self.assertIn("Request ID: INC-123", result.stdout)
+            self.assertIn("Source repo: github.com/acme/service", result.stdout)
+            self.assertIn("Run ID: run-456", result.stdout)
+
+            log_path = cwd / ".mcpguard" / "logs" / "simulations.jsonl"
+            entry = json.loads(log_path.read_text(encoding="utf-8").strip())
+            self.assertEqual(entry["actor"], "alex@example.com")
+            self.assertEqual(entry["request_reason"], "triage production incident")
+            self.assertEqual(entry["request_id"], "INC-123")
+            self.assertEqual(entry["source_repo"], "github.com/acme/service")
+            self.assertEqual(entry["run_id"], "run-456")
+
+    def test_report_includes_simulation_metadata(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cwd = Path(temp_dir)
+
+            self.assertEqual(self.run_cli(cwd, "init").returncode, 0)
+            self.assertEqual(self.run_cli(cwd, "add-server", "github").returncode, 0)
+            self.assertEqual(
+                self.run_cli(
+                    cwd,
+                    "simulate",
+                    "github",
+                    "delete_repo",
+                    "--actor",
+                    "security-team",
+                    "--request-id",
+                    "CHG-99",
+                    "--run-id",
+                    "agent-run-1",
+                ).returncode,
+                0,
+            )
+
+            result = self.run_cli(cwd, "report")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = (cwd / ".mcpguard" / "reports" / "report.md").read_text(encoding="utf-8")
+            self.assertIn("actor: security-team", report)
+            self.assertIn("request: CHG-99", report)
+            self.assertIn("run: agent-run-1", report)
+
     def test_invalid_policy_mode_errors(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             cwd = Path(temp_dir)

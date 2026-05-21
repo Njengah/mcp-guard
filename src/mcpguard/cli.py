@@ -74,6 +74,11 @@ def build_parser() -> argparse.ArgumentParser:
     simulate_parser = subparsers.add_parser("simulate", help="Evaluate a proposed MCP tool call.")
     simulate_parser.add_argument("server", help="Configured MCP server name.")
     simulate_parser.add_argument("tool", help="Tool name to evaluate.")
+    simulate_parser.add_argument("--actor", help="Person, service, or agent requesting the tool call.")
+    simulate_parser.add_argument("--reason", help="Human-readable reason for the simulated request.")
+    simulate_parser.add_argument("--request-id", help="External request or ticket identifier.")
+    simulate_parser.add_argument("--source-repo", help="Repository associated with the simulated request.")
+    simulate_parser.add_argument("--run-id", help="Automation, CI, or agent run identifier.")
     simulate_parser.set_defaults(func=cmd_simulate)
 
     report_parser = subparsers.add_parser("report", help="Generate a governance report.")
@@ -154,12 +159,30 @@ def cmd_inspect(_args: argparse.Namespace) -> int:
 
 
 def cmd_simulate(args: argparse.Namespace) -> int:
-    result = simulate(args.server, args.tool)
+    result = simulate(
+        args.server,
+        args.tool,
+        actor=args.actor,
+        request_reason=args.reason,
+        request_id=args.request_id,
+        source_repo=args.source_repo,
+        run_id=args.run_id,
+    )
     print(f"Decision: {result['decision']}")
     print(f"Reason: {result['reason']}")
     print(f"Server: {result['server']}")
     print(f"Tool: {result['tool']}")
     print(f"Timestamp: {result['timestamp']}")
+    if result.get("actor"):
+        print(f"Actor: {result['actor']}")
+    if result.get("request_reason"):
+        print(f"Request reason: {result['request_reason']}")
+    if result.get("request_id"):
+        print(f"Request ID: {result['request_id']}")
+    if result.get("source_repo"):
+        print(f"Source repo: {result['source_repo']}")
+    if result.get("run_id"):
+        print(f"Run ID: {result['run_id']}")
     return 0
 
 
