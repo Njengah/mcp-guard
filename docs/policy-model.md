@@ -37,11 +37,16 @@ If no policy exists for a tool, MCPGuard returns `REQUIRE_APPROVAL` by default.
 Reports include:
 
 - configured servers
+- policy coverage summary
+- servers without explicit policies
 - policy summary
 - high-risk tools
 - tools requiring approval
 - blocked tools
+- high-risk unknown simulations
 - recent simulations
+- approval activity
+- experimental proxy events
 - governance evidence counts
 - recommendations
 
@@ -52,5 +57,6 @@ MCPGuard treats the following as governance evidence:
 - configured servers
 - configured tool policies
 - simulated decisions
+- approval records
+- experimental proxy events
 - generated report timestamp
-

@@ -7,6 +7,9 @@ MCPGuard is a dependency-light Python CLI. The MVP keeps all state local to the 
 - `mcpguard.cli`: argparse command routing and terminal output.
 - `mcpguard.core`: command behavior and report generation.
 - `mcpguard.policy`: allow, block, and approval decision logic.
+- `mcpguard.packs`: built-in policy pack definitions.
+- `mcpguard.redaction`: redaction patterns and recursive redaction helpers.
+- `mcpguard.risk`: configurable risk scoring.
 - `mcpguard.storage`: JSON and JSONL persistence helpers.
 - `mcpguard.errors`: expected user-facing error types.
 
@@ -16,7 +19,9 @@ MCPGuard is a dependency-light Python CLI. The MVP keeps all state local to the 
 2. `add-server` updates `config.json` and prepares an empty server policy map.
 3. `policy add` writes tool policy entries into `policies.json`.
 4. `simulate` evaluates the tool against the policy map and appends a JSONL audit entry.
-5. `report` reads config, policies, and logs, then writes a Markdown governance report.
+5. `approval` commands append local approval evidence.
+6. `proxy evaluate` records experimental gateway decisions.
+7. `report` reads config, policies, and logs, then writes a Markdown governance report.
 
 ## Design Constraints
 
@@ -25,4 +30,3 @@ MCPGuard is a dependency-light Python CLI. The MVP keeps all state local to the 
 - Idempotent initialization.
 - Human-readable JSON and Markdown outputs.
 - Future-ready fields for live gateway integrations.
-
