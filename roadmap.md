@@ -148,4 +148,4 @@ Review value:
 
 ## Next Feature
 
-Start with `feature/configurable-risk-engine`.
+Start with `feature/mcp-proxy-spike`.

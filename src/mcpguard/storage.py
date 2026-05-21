@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .errors import CorruptedStateError, NotInitializedError
+from .risk import default_risk_config
 
 SCHEMA_VERSION = "0.1"
 STATE_DIR = ".mcpguard"
@@ -72,6 +73,7 @@ def default_config(project_name: str, timestamp: str) -> dict[str, Any]:
             "default_patterns": True,
             "patterns": [],
         },
+        "risk": default_risk_config(),
     }
 
 

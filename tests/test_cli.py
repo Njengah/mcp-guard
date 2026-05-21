@@ -373,6 +373,52 @@ class CliTests(unittest.TestCase):
             self.assertIn("High-risk unknown simulations: 1", report)
             self.assertIn("Convert high-risk unknown simulated tools into explicit", report)
 
+    def test_custom_risk_config_applies_to_simulations_and_reports(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cwd = Path(temp_dir)
+
+            self.assertEqual(self.run_cli(cwd, "init").returncode, 0)
+            self.assertEqual(self.run_cli(cwd, "add-server", "github").returncode, 0)
+            config_path = cwd / ".mcpguard" / "config.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["risk"]["keywords"] = ["archive"]
+            config["risk"]["keyword_modifier"] = 50
+            config["risk"]["high_risk_threshold"] = 80
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+
+            self.assertEqual(self.run_cli(cwd, "simulate", "github", "archive_repository").returncode, 0)
+            log_entry = json.loads(
+                (cwd / ".mcpguard" / "logs" / "simulations.jsonl").read_text(encoding="utf-8").strip()
+            )
+            self.assertEqual(log_entry["risk_score"], 90)
+
+            result = self.run_cli(cwd, "report")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = (cwd / ".mcpguard" / "reports" / "report.md").read_text(encoding="utf-8")
+            self.assertIn("github.archive_repository risk 90", report)
+
+    def test_server_and_pack_risk_defaults_apply_to_policies(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cwd = Path(temp_dir)
+
+            self.assertEqual(self.run_cli(cwd, "init").returncode, 0)
+            config_path = cwd / ".mcpguard" / "config.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["risk"]["server_defaults"] = {"github": 10}
+            config["risk"]["pack_defaults"] = {"github": 5}
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+
+            self.assertEqual(self.run_cli(cwd, "add-server", "github").returncode, 0)
+            self.assertEqual(
+                self.run_cli(cwd, "policy", "add", "github", "read_file", "--mode", "allow").returncode,
+                0,
+            )
+            self.assertEqual(self.run_cli(cwd, "policy", "apply-pack", "github").returncode, 0)
+
+            policies = json.loads((cwd / ".mcpguard" / "policies.json").read_text(encoding="utf-8"))
+            self.assertEqual(policies["servers"]["github"]["read_file"]["risk_score"], 40)
+            self.assertEqual(policies["servers"]["github"]["get_file_contents"]["risk_score"], 45)
+
     def test_invalid_policy_mode_errors(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             cwd = Path(temp_dir)

@@ -13,6 +13,7 @@ from .errors import (
 from .packs import POLICY_PACKS, PolicyPack, list_policy_packs
 from .policy import evaluate_policy, validate_mode
 from .redaction import configured_redaction_patterns, redact_text, redact_value
+from .risk import high_risk_threshold, risk_score
 from .storage import (
     SCHEMA_VERSION,
     append_jsonl,
@@ -69,7 +70,7 @@ def add_policy(server: str, tool: str, mode: str, root: Path | None = None) -> d
         "updated_at": timestamp,
         "agent_tool": None,
         "mcp_transport": None,
-        "risk_score": default_risk_score(tool, mode),
+        "risk_score": default_risk_score(tool, mode, config, server=server),
         "approval_actor": None,
         "source_repo": config.get("future_integrations", {}).get("source_repo"),
         "agenttrace_run_id": config.get("future_integrations", {}).get("agenttrace_run_id"),
@@ -107,7 +108,7 @@ def apply_policy_pack(pack_name: str, root: Path | None = None) -> dict[str, Any
             "description": tool.description,
             "agent_tool": None,
             "mcp_transport": None,
-            "risk_score": default_risk_score(tool.name, mode),
+            "risk_score": default_risk_score(tool.name, mode, config, server=pack.name, policy_pack=pack.name),
             "approval_actor": None,
             "source_repo": config.get("future_integrations", {}).get("source_repo"),
             "agenttrace_run_id": config.get("future_integrations", {}).get("agenttrace_run_id"),
@@ -235,7 +236,7 @@ def simulate(
         "matched_policy": mode,
         "agent_tool": None,
         "mcp_transport": None,
-        "risk_score": default_risk_score(tool, mode),
+        "risk_score": default_risk_score(tool, mode, config, server=server),
         "actor": _optional_text(actor),
         "request_reason": _optional_text(request_reason),
         "request_id": _optional_text(request_id),
@@ -376,17 +377,15 @@ def build_report(root: Path | None = None) -> Path:
     return paths.report_file
 
 
-def default_risk_score(tool: str, mode: str | None) -> int:
-    lowered = tool.lower()
-    risky_words = ("write", "delete", "remove", "publish", "deploy", "execute", "run", "update")
-    score = 30
-    if any(word in lowered for word in risky_words):
-        score += 40
-    if mode == "block":
-        score += 20
-    if mode == "approve" or mode is None:
-        score += 10
-    return min(score, 100)
+def default_risk_score(
+    tool: str,
+    mode: str | None,
+    config: dict[str, Any] | None = None,
+    *,
+    server: str | None = None,
+    policy_pack: str | None = None,
+) -> int:
+    return risk_score(tool, mode, config, server=server, policy_pack=policy_pack)
 
 
 def render_report(
@@ -455,14 +454,14 @@ def render_report(
         for tool_name, policy in sorted(tool_policies.items()):
             total_policies += 1
             mode = policy.get("mode", "unknown")
-            risk = policy.get("risk_score", default_risk_score(tool_name, mode))
+            risk = policy.get("risk_score", default_risk_score(tool_name, mode, config, server=server_name))
             item = f"{server_name}.{tool_name} ({mode}, risk {risk})"
             lines.append(f"- {item}")
             if mode == "block":
                 blocked.append(item)
             if mode == "approve":
                 approval_policies.append(item)
-            if risk >= 70:
+            if risk >= high_risk_threshold(config):
                 high_risk.append(item)
 
     lines.extend(["", "## High-Risk Tools", ""])
@@ -474,7 +473,7 @@ def render_report(
     lines.extend(["", "## Blocked Tools", ""])
     lines.extend([f"- {item}" for item in blocked] or ["- No blocked tools configured."])
 
-    high_risk_unknown = _high_risk_unknown_simulations(simulations)
+    high_risk_unknown = _high_risk_unknown_simulations(simulations, config)
     lines.extend(["", "## High-Risk Unknown Simulations", ""])
     if high_risk_unknown:
         for entry in high_risk_unknown:
@@ -482,7 +481,15 @@ def render_report(
                 "- {server}.{tool} risk {risk}: {decision} at {timestamp}".format(
                     server=entry.get("server", "unknown"),
                     tool=entry.get("tool", "unknown"),
-                    risk=entry.get("risk_score", default_risk_score(entry.get("tool", ""), None)),
+                    risk=entry.get(
+                        "risk_score",
+                        default_risk_score(
+                            entry.get("tool", ""),
+                            None,
+                            config,
+                            server=entry.get("server"),
+                        ),
+                    ),
                     decision=entry.get("decision", "UNKNOWN"),
                     timestamp=entry.get("timestamp", "unknown"),
                 )
@@ -617,14 +624,18 @@ def _policy_coverage(
     }
 
 
-def _high_risk_unknown_simulations(simulations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _high_risk_unknown_simulations(
+    simulations: list[dict[str, Any]],
+    config: dict[str, Any],
+) -> list[dict[str, Any]]:
     high_risk: list[dict[str, Any]] = []
+    threshold = high_risk_threshold(config)
     for entry in simulations:
         if entry.get("matched_policy") is not None:
             continue
         tool = entry.get("tool", "")
-        risk = entry.get("risk_score", default_risk_score(tool, None))
-        if risk >= 70:
+        risk = entry.get("risk_score", default_risk_score(tool, None, config, server=entry.get("server")))
+        if risk >= threshold:
             high_risk.append(entry)
     return sorted(high_risk, key=lambda entry: entry.get("timestamp", ""))[-10:]
 
