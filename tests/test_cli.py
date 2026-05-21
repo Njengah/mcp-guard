@@ -328,6 +328,51 @@ class CliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             self.assertIn("Unknown server", result.stderr)
 
+    def test_report_includes_policy_coverage_and_uncovered_servers(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cwd = Path(temp_dir)
+
+            self.assertEqual(self.run_cli(cwd, "init").returncode, 0)
+            self.assertEqual(self.run_cli(cwd, "add-server", "github").returncode, 0)
+            self.assertEqual(self.run_cli(cwd, "add-server", "database").returncode, 0)
+            self.assertEqual(
+                self.run_cli(cwd, "policy", "add", "github", "read_file", "--mode", "allow").returncode,
+                0,
+            )
+            self.assertEqual(
+                self.run_cli(cwd, "policy", "add", "github", "delete_repo", "--mode", "block").returncode,
+                0,
+            )
+
+            result = self.run_cli(cwd, "report")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = (cwd / ".mcpguard" / "reports" / "report.md").read_text(encoding="utf-8")
+            self.assertIn("## Policy Coverage Summary", report)
+            self.assertIn("Servers configured: 2", report)
+            self.assertIn("Servers with explicit policies: 1", report)
+            self.assertIn("Servers without explicit policies: 1", report)
+            self.assertIn("Policy coverage: 50%", report)
+            self.assertIn("Allow policies: 1", report)
+            self.assertIn("Block policies: 1", report)
+            self.assertIn("## Servers Without Explicit Policies", report)
+            self.assertIn("database: unknown tools default to approval", report)
+
+    def test_report_highlights_high_risk_unknown_simulations(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cwd = Path(temp_dir)
+
+            self.assertEqual(self.run_cli(cwd, "init").returncode, 0)
+            self.assertEqual(self.run_cli(cwd, "add-server", "github").returncode, 0)
+            self.assertEqual(self.run_cli(cwd, "simulate", "github", "delete_repository").returncode, 0)
+
+            result = self.run_cli(cwd, "report")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = (cwd / ".mcpguard" / "reports" / "report.md").read_text(encoding="utf-8")
+            self.assertIn("## High-Risk Unknown Simulations", report)
+            self.assertIn("github.delete_repository risk 80", report)
+            self.assertIn("High-risk unknown simulations: 1", report)
+            self.assertIn("Convert high-risk unknown simulated tools into explicit", report)
+
     def test_invalid_policy_mode_errors(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             cwd = Path(temp_dir)
