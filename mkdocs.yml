@@ -1,0 +1,46 @@
+site_name: MCPGuard
+site_description: Documentation for MCPGuard, a local-first governance layer for MCP tool calls
+site_url: https://njengah.github.io/mcp-guard/
+repo_url: https://github.com/Njengah/mcp-guard
+repo_name: Njengah/mcp-guard
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+
+nav:
+  - Home: index.md
+  - User Guides:
+      - Start Here: user-guides/README.md
+      - Install And Run: user-guides/install-and-run.md
+      - Your First Governance Flow: user-guides/first-governance-flow.md
+      - Policy Packs: user-guides/policy-packs.md
+      - Simulation And Reports: user-guides/simulation-and-reports.md
+      - Approval Workflow: user-guides/approval-workflow.md
+      - Redaction And Risk: user-guides/redaction-and-risk.md
+      - Experimental Proxy: user-guides/experimental-proxy.md
+      - Command Cheat Sheet: user-guides/command-cheat-sheet.md
+      - Troubleshooting: user-guides/troubleshooting.md
+      - Glossary: user-guides/glossary.md
+  - Reference:
+      - CLI Reference: reference/cli.md
+      - State Files: reference/state-files.md
+      - Configuration: reference/configuration.md
+      - Reports: reference/reports.md
+      - GitHub Pages Deployment: reference/github-pages.md
+  - Project Notes:
+      - Product: product.md
+      - Architecture: architecture.md
+      - Policy Model: policy-model.md
+      - Workflow: workflow.md
+      - Roadmap: future-roadmap.md
