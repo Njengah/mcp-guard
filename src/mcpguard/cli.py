@@ -13,6 +13,7 @@ from .core import (
     apply_policy_pack,
     available_policy_packs,
     build_report,
+    evaluate_proxy_call,
     export_policies,
     import_policies,
     init,
@@ -107,6 +108,20 @@ def build_parser() -> argparse.ArgumentParser:
     approval_reject.add_argument("--approver", required=True, help="Person or service rejecting the request.")
     approval_reject.add_argument("--reason", help="Decision reason.")
     approval_reject.set_defaults(func=cmd_approval_reject)
+
+    proxy_parser = subparsers.add_parser("proxy", help="Experimental MCP proxy evaluation commands.")
+    proxy_subparsers = proxy_parser.add_subparsers(dest="proxy_command", required=True)
+    proxy_evaluate = proxy_subparsers.add_parser(
+        "evaluate",
+        help="Experimentally evaluate whether a proxy should forward a tool call.",
+    )
+    proxy_evaluate.add_argument("server", help="Configured MCP server name.")
+    proxy_evaluate.add_argument("tool", help="Tool name to evaluate.")
+    proxy_evaluate.add_argument("--actor", help="Person, service, or agent requesting the tool call.")
+    proxy_evaluate.add_argument("--request-id", help="External request or ticket identifier.")
+    proxy_evaluate.add_argument("--source-repo", help="Repository associated with the request.")
+    proxy_evaluate.add_argument("--run-id", help="Automation, CI, or agent run identifier.")
+    proxy_evaluate.set_defaults(func=cmd_proxy_evaluate)
 
     report_parser = subparsers.add_parser("report", help="Generate a governance report.")
     report_parser.set_defaults(func=cmd_report)
@@ -245,6 +260,26 @@ def cmd_approval_reject(args: argparse.Namespace) -> int:
     )
     print(f"Approval recorded: {record['request_id']} -> rejected")
     return 0
+
+
+def cmd_proxy_evaluate(args: argparse.Namespace) -> int:
+    result = evaluate_proxy_call(
+        args.server,
+        args.tool,
+        actor=args.actor,
+        request_id=args.request_id,
+        source_repo=args.source_repo,
+        run_id=args.run_id,
+    )
+    print("Experimental proxy evaluation")
+    print(f"Action: {result['gateway_action']}")
+    print(f"Decision: {result['decision']}")
+    print(f"Reason: {result['reason']}")
+    print(f"Server: {result['server']}")
+    print(f"Tool: {result['tool']}")
+    print(f"Risk score: {result['risk_score']}")
+    print(f"Timestamp: {result['timestamp']}")
+    return 0 if result["gateway_action"] == "forward" else 2
 
 
 def cmd_report(_args: argparse.Namespace) -> int:

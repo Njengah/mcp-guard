@@ -419,6 +419,79 @@ class CliTests(unittest.TestCase):
             self.assertEqual(policies["servers"]["github"]["read_file"]["risk_score"], 40)
             self.assertEqual(policies["servers"]["github"]["get_file_contents"]["risk_score"], 45)
 
+    def test_experimental_proxy_evaluate_forwards_allowed_policy(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cwd = Path(temp_dir)
+
+            self.assertEqual(self.run_cli(cwd, "init").returncode, 0)
+            self.assertEqual(self.run_cli(cwd, "add-server", "github").returncode, 0)
+            self.assertEqual(
+                self.run_cli(cwd, "policy", "add", "github", "read_file", "--mode", "allow").returncode,
+                0,
+            )
+
+            result = self.run_cli(
+                cwd,
+                "proxy",
+                "evaluate",
+                "github",
+                "read_file",
+                "--actor",
+                "agent",
+                "--request-id",
+                "REQ-1",
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Experimental proxy evaluation", result.stdout)
+            self.assertIn("Action: forward", result.stdout)
+            self.assertIn("Decision: ALLOW", result.stdout)
+
+            event = json.loads((cwd / ".mcpguard" / "logs" / "proxy.jsonl").read_text(encoding="utf-8").strip())
+            self.assertTrue(event["experimental"])
+            self.assertEqual(event["gateway_action"], "forward")
+            self.assertEqual(event["actor"], "agent")
+            self.assertEqual(event["request_id"], "REQ-1")
+
+    def test_experimental_proxy_evaluate_holds_blocked_and_unknown_calls(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cwd = Path(temp_dir)
+
+            self.assertEqual(self.run_cli(cwd, "init").returncode, 0)
+            self.assertEqual(self.run_cli(cwd, "add-server", "github").returncode, 0)
+            self.assertEqual(
+                self.run_cli(cwd, "policy", "add", "github", "delete_repo", "--mode", "block").returncode,
+                0,
+            )
+
+            blocked = self.run_cli(cwd, "proxy", "evaluate", "github", "delete_repo")
+            self.assertEqual(blocked.returncode, 2)
+            self.assertIn("Action: hold", blocked.stdout)
+            self.assertIn("Decision: BLOCK", blocked.stdout)
+
+            unknown = self.run_cli(cwd, "proxy", "evaluate", "github", "create_issue")
+            self.assertEqual(unknown.returncode, 2)
+            self.assertIn("Action: hold", unknown.stdout)
+            self.assertIn("Decision: REQUIRE_APPROVAL", unknown.stdout)
+
+    def test_report_includes_experimental_proxy_events(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cwd = Path(temp_dir)
+
+            self.assertEqual(self.run_cli(cwd, "init").returncode, 0)
+            self.assertEqual(self.run_cli(cwd, "add-server", "github").returncode, 0)
+            self.assertEqual(
+                self.run_cli(cwd, "policy", "add", "github", "read_file", "--mode", "allow").returncode,
+                0,
+            )
+            self.assertEqual(self.run_cli(cwd, "proxy", "evaluate", "github", "read_file").returncode, 0)
+
+            result = self.run_cli(cwd, "report")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = (cwd / ".mcpguard" / "reports" / "report.md").read_text(encoding="utf-8")
+            self.assertIn("## Experimental Proxy Events", report)
+            self.assertIn("forward: github.read_file", report)
+            self.assertIn("Experimental proxy events: 1", report)
+
     def test_invalid_policy_mode_errors(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             cwd = Path(temp_dir)
