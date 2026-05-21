@@ -251,6 +251,54 @@ def simulate(
     return redacted_entry
 
 
+def evaluate_proxy_call(
+    server: str,
+    tool: str,
+    root: Path | None = None,
+    *,
+    actor: str | None = None,
+    request_id: str | None = None,
+    source_repo: str | None = None,
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    paths = project_paths(root)
+    config = read_config(paths)
+    policies = read_policies(paths)
+    if server not in config.get("servers", {}):
+        raise UnknownServerError(f"Unknown server '{server}'. Add it with 'mcpguard add-server {server}'.")
+
+    policy_entry = policies.get("servers", {}).get(server, {}).get(tool)
+    mode = policy_entry.get("mode") if isinstance(policy_entry, dict) else None
+    result = evaluate_policy(mode)
+    gateway_action = _gateway_action(result.decision)
+    entry = {
+        "timestamp": utc_now(),
+        "experimental": True,
+        "server": server,
+        "tool": tool,
+        "decision": result.decision,
+        "gateway_action": gateway_action,
+        "reason": result.reason,
+        "matched_policy": mode,
+        "risk_score": default_risk_score(tool, mode, config, server=server),
+        "actor": _optional_text(actor),
+        "request_id": _optional_text(request_id),
+        "source_repo": _optional_text(source_repo)
+        or config.get("future_integrations", {}).get("source_repo"),
+        "run_id": _optional_text(run_id)
+        or config.get("future_integrations", {}).get("agenttrace_run_id"),
+    }
+    redacted_entry = redact_value(entry, configured_redaction_patterns(config))
+    append_jsonl(paths.logs_dir / "proxy.jsonl", redacted_entry)
+    return redacted_entry
+
+
+def _gateway_action(decision: str) -> str:
+    if decision == "ALLOW":
+        return "forward"
+    return "hold"
+
+
 def _optional_text(value: str | None) -> str | None:
     if value is None:
         return None
@@ -363,13 +411,22 @@ def build_report(root: Path | None = None) -> Path:
     policies = read_policies(paths)
     simulations = read_jsonl_dir(paths.logs_dir, "simulations*.jsonl")
     approvals = read_jsonl_dir(paths.logs_dir, "approvals*.jsonl")
+    proxy_events = read_jsonl_dir(paths.logs_dir, "proxy*.jsonl")
     timestamp = utc_now()
 
     patterns = configured_redaction_patterns(config)
     redacted_simulations = redact_value(simulations, patterns)
     redacted_approvals = redact_value(approvals, patterns)
+    redacted_proxy_events = redact_value(proxy_events, patterns)
     content = redact_text(
-        render_report(config, policies, redacted_simulations, redacted_approvals, timestamp),
+        render_report(
+            config,
+            policies,
+            redacted_simulations,
+            redacted_approvals,
+            redacted_proxy_events,
+            timestamp,
+        ),
         patterns,
     )
     paths.reports_dir.mkdir(parents=True, exist_ok=True)
@@ -393,6 +450,7 @@ def render_report(
     policies: dict[str, Any],
     simulations: list[dict[str, Any]],
     approvals: list[dict[str, Any]],
+    proxy_events: list[dict[str, Any]],
     timestamp: str,
 ) -> str:
     servers = config.get("servers", {})
@@ -524,6 +582,14 @@ def render_report(
     else:
         lines.append("- No approval activity recorded.")
 
+    lines.extend(["", "## Experimental Proxy Events", ""])
+    recent_proxy_events = sorted(proxy_events, key=lambda entry: entry.get("timestamp", ""))[-10:]
+    if recent_proxy_events:
+        for entry in recent_proxy_events:
+            lines.append(f"- {_format_proxy_event(entry)}")
+    else:
+        lines.append("- No experimental proxy events recorded.")
+
     lines.extend(
         [
             "",
@@ -539,6 +605,7 @@ def render_report(
             f"- Simulated decisions: {len(simulations)}",
             f"- High-risk unknown simulations: {len(high_risk_unknown)}",
             f"- Approval records: {len(approvals)}",
+            f"- Experimental proxy events: {len(proxy_events)}",
             f"- Report timestamp: {timestamp}",
             "",
             "## Recommendations",
@@ -562,6 +629,8 @@ def render_report(
         lines.append("- Run simulations for expected MCP tool calls to create audit evidence.")
     if approvals:
         lines.append("- Review approval activity for stale pending requests and expired approvals.")
+    if proxy_events:
+        lines.append("- Treat proxy events as experimental evidence until a live MCP transport is implemented.")
     if servers and total_policies and simulations:
         lines.append("- Export this report into security reviews after each material policy change.")
 
@@ -662,4 +731,24 @@ def _format_approval_record(entry: dict[str, Any]) -> str:
         parts.append(f"reason: {entry['decision_reason']}")
     if entry.get("expires_at"):
         parts.append(f"expires: {entry['expires_at']}")
+    return "; ".join(parts)
+
+
+def _format_proxy_event(entry: dict[str, Any]) -> str:
+    parts = [
+        "{timestamp} {action}: {server}.{tool} ({decision}, risk {risk})".format(
+            timestamp=entry.get("timestamp", "unknown"),
+            action=entry.get("gateway_action", "unknown"),
+            server=entry.get("server", "unknown"),
+            tool=entry.get("tool", "unknown"),
+            decision=entry.get("decision", "UNKNOWN"),
+            risk=entry.get("risk_score", "unknown"),
+        )
+    ]
+    if entry.get("actor"):
+        parts.append(f"actor: {entry['actor']}")
+    if entry.get("request_id"):
+        parts.append(f"request: {entry['request_id']}")
+    if entry.get("run_id"):
+        parts.append(f"run: {entry['run_id']}")
     return "; ".join(parts)

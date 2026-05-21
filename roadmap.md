@@ -148,4 +148,4 @@ Review value:
 
 ## Next Feature
 
-Start with `feature/mcp-proxy-spike`.
+Roadmap sequence complete. Define the next milestone before creating another feature branch.

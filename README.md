@@ -54,6 +54,7 @@ mcpguard inspect
 mcpguard simulate github delete_repo --actor alex@example.com --reason "review destructive access" --request-id CHG-123
 mcpguard approval request github delete_repo --request-id CHG-123 --requester alex@example.com --reason "maintenance window"
 mcpguard approval approve CHG-123 --approver security@example.com --reason "approved for maintenance window"
+mcpguard proxy evaluate github read_file
 mcpguard report
 ```
 
@@ -70,9 +71,20 @@ mcpguard report
 - `mcpguard approval request <server> <tool> --request-id <id>` records a local approval request.
 - `mcpguard approval approve <request-id> --approver <name>` records an approval decision.
 - `mcpguard approval reject <request-id> --approver <name>` records a rejection decision.
+- `mcpguard proxy evaluate <server> <tool>` experimentally evaluates whether a proxy should forward a tool call.
 - `mcpguard report` writes `.mcpguard/reports/report.md`.
 
 Reports include policy coverage, servers without explicit policies, high-risk unknown simulated tools, recent simulations, approval activity, evidence counts, and recommendations.
+
+## Experimental Proxy Spike
+
+`mcpguard proxy evaluate` is an experimental gateway decision path. It does not run a live MCP transport or forward real traffic. It evaluates the configured policy for a proposed server/tool call, returns `forward` for explicit allow policies, returns `hold` for block or approval-required decisions, and writes evidence to `.mcpguard/logs/proxy.jsonl`.
+
+```powershell
+mcpguard proxy evaluate github read_file --actor agent --request-id REQ-1 --run-id agent-run-456
+```
+
+This spike exists to test the long-term gateway model while reusing MCPGuard policy, risk, redaction, logging, and reporting primitives. Treat proxy events as experimental evidence until a live MCP transport is implemented.
 
 Simulation metadata is optional and can be supplied when a simulated decision needs stronger audit context:
 
@@ -178,6 +190,7 @@ MCPGuard stores local state in:
   policies.json
   logs/
     approvals.jsonl
+    proxy.jsonl
     simulations.jsonl
   reports/
     report.md
@@ -187,4 +200,4 @@ Generated `.mcpguard/` artifacts are ignored by Git by default.
 
 ## MVP Limitations
 
-This MVP simulates governance decisions, stores local approval records, and generates audit reports. It is not yet a live MCP proxy and does not intercept real tool calls.
+This MVP simulates governance decisions, stores local approval records, includes an experimental proxy decision path, and generates audit reports. It does not yet run a live MCP transport or intercept real tool calls.
