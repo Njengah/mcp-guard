@@ -135,11 +135,11 @@ def append_jsonl(path: Path, data: dict[str, Any]) -> None:
         handle.write("\n")
 
 
-def read_jsonl_dir(path: Path) -> list[dict[str, Any]]:
+def read_jsonl_dir(path: Path, pattern: str = "*.jsonl") -> list[dict[str, Any]]:
     if not path.exists():
         return []
     entries: list[dict[str, Any]] = []
-    for log_file in sorted(path.glob("*.jsonl")):
+    for log_file in sorted(path.glob(pattern)):
         try:
             with log_file.open("r", encoding="utf-8") as handle:
                 for line_number, line in enumerate(handle, start=1):
