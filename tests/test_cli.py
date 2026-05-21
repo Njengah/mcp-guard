@@ -132,6 +132,88 @@ class CliTests(unittest.TestCase):
             self.assertIn("request: CHG-99", report)
             self.assertIn("run: agent-run-1", report)
 
+    def test_simulation_log_redacts_default_secret_patterns(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cwd = Path(temp_dir)
+
+            self.assertEqual(self.run_cli(cwd, "init").returncode, 0)
+            self.assertEqual(self.run_cli(cwd, "add-server", "github").returncode, 0)
+            secret = "ghp_1234567890abcdefghijklmnopqrstuvwxyz"
+            result = self.run_cli(
+                cwd,
+                "simulate",
+                "github",
+                "create_issue",
+                "--reason",
+                f"rotate token={secret}",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn(secret, result.stdout)
+            self.assertIn("[REDACTED]", result.stdout)
+
+            log_path = cwd / ".mcpguard" / "logs" / "simulations.jsonl"
+            log_content = log_path.read_text(encoding="utf-8")
+            self.assertNotIn(secret, log_content)
+            self.assertIn("[REDACTED]", log_content)
+
+    def test_report_redacts_default_secret_patterns(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cwd = Path(temp_dir)
+
+            self.assertEqual(self.run_cli(cwd, "init").returncode, 0)
+            self.assertEqual(self.run_cli(cwd, "add-server", "github").returncode, 0)
+            secret = "sk-1234567890abcdefghijklmnop"
+            self.assertEqual(
+                self.run_cli(
+                    cwd,
+                    "simulate",
+                    "github",
+                    "delete_repo",
+                    "--actor",
+                    f"bot token={secret}",
+                ).returncode,
+                0,
+            )
+
+            result = self.run_cli(cwd, "report")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = (cwd / ".mcpguard" / "reports" / "report.md").read_text(encoding="utf-8")
+            self.assertNotIn(secret, report)
+            self.assertIn("[REDACTED]", report)
+
+    def test_configured_redaction_patterns_apply_to_logs_and_reports(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cwd = Path(temp_dir)
+
+            self.assertEqual(self.run_cli(cwd, "init").returncode, 0)
+            self.assertEqual(self.run_cli(cwd, "add-server", "github").returncode, 0)
+            config_path = cwd / ".mcpguard" / "config.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["redaction"]["patterns"] = [r"internal-[0-9]+"]
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+
+            sensitive_id = "internal-12345"
+            self.assertEqual(
+                self.run_cli(
+                    cwd,
+                    "simulate",
+                    "github",
+                    "create_issue",
+                    "--request-id",
+                    sensitive_id,
+                ).returncode,
+                0,
+            )
+            self.assertEqual(self.run_cli(cwd, "report").returncode, 0)
+
+            log_content = (cwd / ".mcpguard" / "logs" / "simulations.jsonl").read_text(encoding="utf-8")
+            report = (cwd / ".mcpguard" / "reports" / "report.md").read_text(encoding="utf-8")
+            self.assertNotIn(sensitive_id, log_content)
+            self.assertNotIn(sensitive_id, report)
+            self.assertIn("[REDACTED]", log_content)
+            self.assertIn("[REDACTED]", report)
+
     def test_invalid_policy_mode_errors(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             cwd = Path(temp_dir)

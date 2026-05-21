@@ -68,6 +68,10 @@ def default_config(project_name: str, timestamp: str) -> dict[str, Any]:
             "source_repo": None,
             "agenttrace_run_id": None,
         },
+        "redaction": {
+            "default_patterns": True,
+            "patterns": [],
+        },
     }
 
 
@@ -150,4 +154,3 @@ def read_jsonl_dir(path: Path) -> list[dict[str, Any]]:
                 f"Corrupted JSONL log file: {log_file}:{line_number}"
             ) from exc
     return entries
-
