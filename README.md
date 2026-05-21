@@ -111,6 +111,37 @@ Custom project patterns can be added in `.mcpguard/config.json`:
 
 Set `default_patterns` to `false` only when a project intentionally wants to manage every redaction pattern itself.
 
+## Risk Scoring
+
+Risk scores default to the original MCPGuard behavior: base score `30`, risky keyword modifier `40`, block modifier `20`, approval or unknown-policy modifier `10`, and high-risk threshold `70`.
+
+Projects can tune scoring in `.mcpguard/config.json`:
+
+```json
+{
+  "risk": {
+    "base_score": 30,
+    "keywords": ["write", "delete", "remove", "publish", "deploy", "execute", "run", "update"],
+    "keyword_modifier": 40,
+    "mode_modifiers": {
+      "allow": 0,
+      "approve": 10,
+      "block": 20,
+      "unknown": 10
+    },
+    "server_defaults": {
+      "database": 15
+    },
+    "pack_defaults": {
+      "github": 5
+    },
+    "high_risk_threshold": 70
+  }
+}
+```
+
+Server and pack defaults add to the base risk score before keyword and mode modifiers are applied.
+
 ## Policy Packs
 
 Policy packs provide starter policies for common MCP server categories. They are intentionally conservative: read-only discovery tools are usually allowed, mutating tools require approval, and destructive or arbitrary execution tools are blocked.
