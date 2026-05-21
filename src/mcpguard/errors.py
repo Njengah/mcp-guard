@@ -22,5 +22,9 @@ class InvalidPolicyFileError(MCPGuardError):
     """Raised when an imported policy file does not match the expected shape."""
 
 
+class UnknownPolicyPackError(MCPGuardError):
+    """Raised when a command references an unknown built-in policy pack."""
+
+
 class CorruptedStateError(MCPGuardError):
     """Raised when persisted JSON cannot be read as valid MCPGuard state."""

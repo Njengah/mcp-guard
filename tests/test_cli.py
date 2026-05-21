@@ -94,6 +94,43 @@ class CliTests(unittest.TestCase):
             self.assertEqual(exported["schema_version"], "0.1")
             self.assertEqual(exported["servers"]["github"]["delete_repo"]["mode"], "block")
 
+    def test_policy_apply_pack_creates_server_and_policies(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cwd = Path(temp_dir)
+
+            self.assertEqual(self.run_cli(cwd, "init").returncode, 0)
+            result = self.run_cli(cwd, "policy", "apply-pack", "github")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Policy pack applied: github", result.stdout)
+
+            config = json.loads((cwd / ".mcpguard" / "config.json").read_text(encoding="utf-8"))
+            policies = json.loads((cwd / ".mcpguard" / "policies.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                config["servers"]["github"]["description"],
+                "GitHub tools for repository, issue, and pull request operations.",
+            )
+            github_policies = policies["servers"]["github"]
+            self.assertEqual(github_policies["get_file_contents"]["mode"], "allow")
+            self.assertEqual(github_policies["create_pull_request"]["mode"], "approve")
+            self.assertEqual(github_policies["delete_repository"]["mode"], "block")
+            self.assertEqual(github_policies["delete_repository"]["policy_pack"], "github")
+
+    def test_policy_apply_pack_is_available_for_each_builtin_pack(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cwd = Path(temp_dir)
+            self.assertEqual(self.run_cli(cwd, "init").returncode, 0)
+
+            for pack_name in ("browser", "database", "filesystem", "github"):
+                result = self.run_cli(cwd, "policy", "apply-pack", pack_name)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(f"Policy pack applied: {pack_name}", result.stdout)
+
+            policies = json.loads((cwd / ".mcpguard" / "policies.json").read_text(encoding="utf-8"))
+            self.assertIn("execute_script", policies["servers"]["browser"])
+            self.assertIn("drop_table", policies["servers"]["database"])
+            self.assertIn("write_file", policies["servers"]["filesystem"])
+            self.assertIn("merge_pull_request", policies["servers"]["github"])
+
     def test_policy_export_prints_json_without_path(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             cwd = Path(temp_dir)

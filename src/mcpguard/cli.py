@@ -9,6 +9,8 @@ from . import __version__
 from .core import (
     add_policy,
     add_server,
+    apply_policy_pack,
+    available_policy_packs,
     build_report,
     export_policies,
     import_policies,
@@ -47,6 +49,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     policy_add.set_defaults(func=cmd_policy_add)
 
+    policy_apply_pack = policy_subparsers.add_parser(
+        "apply-pack",
+        help="Apply a built-in starter policy pack.",
+    )
+    policy_apply_pack.add_argument(
+        "name",
+        choices=available_policy_packs(),
+        help="Built-in policy pack name.",
+    )
+    policy_apply_pack.set_defaults(func=cmd_policy_apply_pack)
+
     policy_export = policy_subparsers.add_parser("export", help="Export tool policies as JSON.")
     policy_export.add_argument("path", nargs="?", help="Optional output file path.")
     policy_export.set_defaults(func=cmd_policy_export)
@@ -84,6 +97,13 @@ def cmd_add_server(args: argparse.Namespace) -> int:
 def cmd_policy_add(args: argparse.Namespace) -> int:
     policy = add_policy(args.server, args.tool, args.mode)
     print(f"Policy saved: {policy['server']}.{policy['tool']} -> {policy['mode']}")
+    return 0
+
+
+def cmd_policy_apply_pack(args: argparse.Namespace) -> int:
+    result = apply_policy_pack(args.name)
+    policy_count = len(result["policies"])
+    print(f"Policy pack applied: {result['pack']} ({policy_count} policies)")
     return 0
 
 

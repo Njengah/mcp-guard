@@ -7,8 +7,10 @@ from .errors import (
     DuplicateServerError,
     InvalidPolicyFileError,
     InvalidPolicyModeError,
+    UnknownPolicyPackError,
     UnknownServerError,
 )
+from .packs import POLICY_PACKS, PolicyPack, list_policy_packs
 from .policy import evaluate_policy, validate_mode
 from .storage import (
     SCHEMA_VERSION,
@@ -73,6 +75,64 @@ def add_policy(server: str, tool: str, mode: str, root: Path | None = None) -> d
     }
     write_json(paths.policies_file, policies)
     return server_policies[tool]
+
+
+def apply_policy_pack(pack_name: str, root: Path | None = None) -> dict[str, Any]:
+    pack = _get_policy_pack(pack_name)
+    paths = project_paths(root)
+    config = read_config(paths)
+    policies = read_policies(paths)
+    timestamp = utc_now()
+
+    servers = config.setdefault("servers", {})
+    if pack.name not in servers:
+        servers[pack.name] = {
+            "name": pack.name,
+            "created_at": timestamp,
+            "enabled": True,
+            "description": pack.server_description,
+        }
+    elif not servers[pack.name].get("description"):
+        servers[pack.name]["description"] = pack.server_description
+
+    server_policies = policies.setdefault("servers", {}).setdefault(pack.name, {})
+    for tool in pack.tools:
+        mode = validate_mode(tool.mode)
+        server_policies[tool.name] = {
+            "server": pack.name,
+            "tool": tool.name,
+            "mode": mode,
+            "updated_at": timestamp,
+            "description": tool.description,
+            "agent_tool": None,
+            "mcp_transport": None,
+            "risk_score": default_risk_score(tool.name, mode),
+            "approval_actor": None,
+            "source_repo": config.get("future_integrations", {}).get("source_repo"),
+            "agenttrace_run_id": config.get("future_integrations", {}).get("agenttrace_run_id"),
+            "policy_pack": pack.name,
+        }
+
+    write_json(paths.config_file, config)
+    write_json(paths.policies_file, policies)
+    return {
+        "pack": pack.name,
+        "server": servers[pack.name],
+        "policies": server_policies,
+    }
+
+
+def available_policy_packs() -> tuple[str, ...]:
+    return list_policy_packs()
+
+
+def _get_policy_pack(pack_name: str) -> PolicyPack:
+    normalized = pack_name.lower()
+    pack = POLICY_PACKS.get(normalized)
+    if pack is None:
+        available = ", ".join(list_policy_packs())
+        raise UnknownPolicyPackError(f"Unknown policy pack '{pack_name}'. Available packs: {available}.")
+    return pack
 
 
 def export_policies(root: Path | None = None) -> dict[str, Any]:
