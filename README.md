@@ -51,7 +51,7 @@ mcpguard policy apply-pack github
 mcpguard policy export policies.json
 mcpguard policy import policies.json
 mcpguard inspect
-mcpguard simulate github delete_repo
+mcpguard simulate github delete_repo --actor alex@example.com --reason "review destructive access" --request-id CHG-123
 mcpguard report
 ```
 
@@ -66,6 +66,14 @@ mcpguard report
 - `mcpguard inspect` prints servers and policies grouped by server.
 - `mcpguard simulate <server> <tool>` evaluates a proposed MCP tool call and writes an audit log entry.
 - `mcpguard report` writes `.mcpguard/reports/report.md`.
+
+Simulation metadata is optional and can be supplied when a simulated decision needs stronger audit context:
+
+```powershell
+mcpguard simulate github delete_repo --actor alex@example.com --reason "review destructive access" --request-id CHG-123 --source-repo github.com/acme/service --run-id agent-run-456
+```
+
+Supported metadata fields are `--actor`, `--reason`, `--request-id`, `--source-repo`, and `--run-id`. Supplied values are stored in `.mcpguard/logs/simulations.jsonl` and shown in reports.
 
 ## Policy Packs
 
